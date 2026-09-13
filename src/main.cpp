@@ -62,6 +62,7 @@ Preferences preferences;
 String activeId;
 float liveWeight = 0;
 float hxCalibration = HX711_CALIBRATION;
+uint8_t weightDecimals = 1;
 float hxWeightSamples[HX711_AVERAGE_SAMPLES] = {};
 uint8_t hxWeightSampleCount = 0;
 uint8_t hxWeightSampleIndex = 0;
@@ -77,6 +78,7 @@ bool nfcReady = false;
 volatile bool internetAvailable = false;
 TaskHandle_t networkTaskHandle = nullptr;
 bool hxReady = false;
+bool hxHasSample = false;
 bool ntpConfigured = false;
 unsigned long lastNtpAttempt = 0;
 unsigned long restartAt = 0;
@@ -422,6 +424,15 @@ void buttonPressed(int x,int y,int w,int h,const String &text) {
   button(x,y,w,h,text,C_PRESSED);
   delay(60);
 }
+// Einheitliche Gewichtsformatierung für WebUI und LCD: 0 oder 1 Nachkommastelle
+// wird in den Einstellungen gewählt; auf dem LCD wird das deutsche Komma genutzt.
+String formatWeightLcd(float value) {
+  // Verhindert -0 bzw. -0,0 durch minimale Messabweichungen um den Nullpunkt.
+  if(fabsf(value)<(weightDecimals?0.05F:0.5F))value=0.0F;
+  String text(value,static_cast<unsigned int>(weightDecimals));
+  text.replace(".",",");
+  return text;
+}
 void draw()  {
   if(spoolMenu) {
     screen.fillScreen(C_BG);screen.setTextColor(C_TEXT);screen.setTextSize(2);screen.setCursor(22,30);screen.print("Spulengewicht");screen.setTextSize(1);screen.setCursor(22,55);screen.print("Wert fuer aktive Rolle waehlen");
@@ -467,15 +478,15 @@ void draw()  {
   screen.setTextColor(C_TEXT);
   screen.setTextSize(3);
   screen.setCursor(22,88);
-  if(hxReady)screen.printf("%.1f",liveWeight);
-  else screen.print("0.0");
+  if(hxHasSample)screen.print(formatWeightLcd(liveWeight));
+  else screen.print(formatWeightLcd(0));
   screen.setTextSize(1);screen.print(" g");
   label("MATERIAL",177,62);
   screen.setTextColor(C_TEXT);
   screen.setTextSize(3);
   screen.setCursor(177,88);
-  if(hxReady)screen.printf("%.1f",max(0.0F,liveWeight-(findRoll(activeId)?findRoll(activeId)->spoolWeight:0.0F)));
-  else screen.print("0.0");
+  if(hxHasSample)screen.print(formatWeightLcd(max(0.0F,liveWeight-(findRoll(activeId)?findRoll(activeId)->spoolWeight:0.0F))));
+  else screen.print(formatWeightLcd(0));
   screen.setTextSize(1);screen.print(" g");
   Roll*r=findRoll(activeId);
   screen.fillRoundRect(10,156,300,170,10,C_PANEL);
@@ -502,8 +513,8 @@ void draw()  {
     screen.setCursor(22,274);
     // Verbrauch gemäß Datenmodell: aktuelles Materialgewicht minus zuletzt
     // in der Rollen-Datenbank gespeichertes Materialgewicht.
-    if(hxReady)screen.printf("%.1f g",max(0.0F,liveWeight-r->spoolWeight)-r->weight);
-    else screen.print("0.0 g");
+    if(hxHasSample)screen.print(formatWeightLcd(max(0.0F,liveWeight-r->spoolWeight)-r->weight)+" g");
+    else screen.print(formatWeightLcd(0)+" g");
   }
   else {
     screen.setTextColor(C_TEXT);
@@ -540,8 +551,8 @@ void drawLiveWeight() {
   screen.setTextColor(C_TEXT);
   screen.setTextSize(3);
   screen.setCursor(22,88);
-  if(hxReady)screen.printf("%.1f",liveWeight);
-  else screen.print("0.0");
+  if(hxHasSample)screen.print(formatWeightLcd(liveWeight));
+  else screen.print(formatWeightLcd(0));
   screen.setTextSize(1);
   screen.print(" g");
 
@@ -549,8 +560,8 @@ void drawLiveWeight() {
   screen.setTextColor(C_TEXT);
   screen.setTextSize(3);
   screen.setCursor(177,88);
-  if(hxReady)screen.printf("%.1f",netWeight);
-  else screen.print("0.0");
+  if(hxHasSample)screen.print(formatWeightLcd(netWeight));
+  else screen.print(formatWeightLcd(0));
   screen.setTextSize(1);
   screen.print(" g");
 
@@ -559,8 +570,8 @@ void drawLiveWeight() {
     screen.setTextColor(C_ORANGE);
     screen.setTextSize(2);
     screen.setCursor(22,274);
-    if(hxReady)screen.printf("%.1f g",netWeight-r->weight);
-    else screen.print("0.0 g");
+    if(hxHasSample)screen.print(formatWeightLcd(netWeight-r->weight)+" g");
+    else screen.print(formatWeightLcd(0)+" g");
   }
 }
 
@@ -815,7 +826,9 @@ String scannedNetworks()  {
 // Aktueller Zustand für die AJAX-Statusanzeige im WebUI.
 String statusJson()  {
   Roll*r=findRoll(activeId);
-  String weight=hxReady?String(liveWeight,1):"--";
+  float shownWeight=fabsf(liveWeight)<(weightDecimals?0.05F:0.5F)?0.0F:liveWeight;
+  String weight=hxHasSample?String(shownWeight,static_cast<unsigned int>(weightDecimals)):String(0.0F,static_cast<unsigned int>(weightDecimals));
+  weight.replace(".",",");
   String s="{\"weight\":\""+weight+"\",\"id\":\""+esc(activeId)+"\",\"material\":\""+esc(r?r->material:"")+"\",\"maker\":\""+esc(r?r->maker:"")+"\",\"time\":\""+clockText()+"\",\"internet\":"+(internetAvailable?"true":"false")+",\"battery\":"+String(batteryPercent())+",\"voltage\":"+String(batteryVoltage(),2)+",\"ip\":\""+(WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():WiFi.softAPIP().toString())+"\"}";
   return s;
 }
@@ -832,7 +845,9 @@ const char SETTINGS_EXT[] PROGMEM = R"HTML(<script>(()=>{let ota=document.queryS
 const char SETTINGS_SYNC[] PROGMEM = R"HTML(<script>(()=>{let b=document.createElement('button');b.textContent='NTP jetzt synchronisieren';document.querySelector('#ntpSave').after(b);b.onclick=async()=>{let r=await(await fetch('/api/settings/ntp/sync',{method:'POST'})).json();document.querySelector('#msg').textContent=r.ok?'Zeit synchronisiert: '+r.time:'Zeitserver nicht erreichbar.'}})()</script>)HTML";
 const char SETTINGS_NET[] PROGMEM = R"HTML(<script>(()=>{let p=document.createElement('p');p.id='internetStatus';document.querySelector('h1').after(p);async function update(){let s=await(await fetch('/api/status')).json();p.textContent='Internetstatus: '+(s.internet?'✓ erreichbar':'✕ nicht erreichbar')+' | ESP-Zeit: '+s.time}update();setInterval(update,10000)})()</script>)HTML";
 const char SETTINGS_NTP_VALUE[] PROGMEM = R"HTML(<script>(()=>{fetch('/api/settings/ntp').then(r=>r.json()).then(s=>{let n=document.querySelector('#ntp');if(n)n.value=s.server})})()</script>)HTML";
-const char SETTINGS_TOUCH[] PROGMEM = R"HTML(<script>(()=>{let section=document.createElement('section'),b=document.createElement('button');section.className='card';section.innerHTML='<h2>Tools</h2><p>Kalibriert die Touchpositionen dauerhaft für dieses LCD.</p>';b.textContent='Touchscreen kalibrieren';b.onclick=async()=>{if(!confirm('Die Kalibrierung wird auf dem LCD gestartet.'))return;await fetch('/api/touch/calibrate',{method:'POST'});document.querySelector('#msg').textContent='Bitte die vier Fadenkreuze auf dem LCD nacheinander berühren.'};section.append(b);document.querySelector('#ota').closest('.card').before(section)})()</script>)HTML";
+const char SETTINGS_TOUCH[] PROGMEM = R"HTML(<script>(()=>{let section=document.createElement('section'),b=document.createElement('button');section.className='card';section.id='tools';section.innerHTML='<h2>Tools</h2><p>Kalibriert die Touchpositionen dauerhaft für dieses LCD.</p>';b.textContent='Touchscreen kalibrieren';b.onclick=async()=>{if(!confirm('Die Kalibrierung wird auf dem LCD gestartet.'))return;await fetch('/api/touch/calibrate',{method:'POST'});document.querySelector('#msg').textContent='Bitte die vier Fadenkreuze auf dem LCD nacheinander berühren.'};section.append(b);document.querySelector('#ota').closest('.card').before(section)})()</script>)HTML";
+const char SETTINGS_WEIGHT_FORMAT[] PROGMEM = R"HTML(<script>(()=>{let tools=document.querySelector('#tools');if(!tools)return;let box=document.createElement('div');box.innerHTML='<label>Gewichtsanzeige</label><select id="weightDecimals"><option value="1">Eine Nachkommastelle (z. B. 123,4 g)</option><option value="0">Ganze Gramm (z. B. 123 g)</option></select><button id="weightDecimalsSave">Rundung speichern</button>';tools.append(box);let select=document.querySelector('#weightDecimals'),msg=document.querySelector('#msg');fetch('/api/settings/weight-format').then(r=>r.json()).then(x=>select.value=x.decimals);document.querySelector('#weightDecimalsSave').onclick=async()=>{let r=await fetch('/api/settings/weight-format',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decimals:Number(select.value)})});msg.textContent=r.ok?'Rundung gespeichert.':'Speichern fehlgeschlagen.'}})()</script>)HTML";
+const char WEB_WEIGHT_FORMAT[] PROGMEM = R"HTML(<script>(()=>{fetch('/api/settings/weight-format').then(r=>r.json()).then(s=>{let decimals=s.decimals||0,oldRender=window.render;window.render=()=>{oldRender();document.querySelectorAll('#rows tr').forEach((row,i)=>{if(data[i]&&row.cells[3])row.cells[3].textContent=Number(data[i].weight).toFixed(decimals).replace('.',',')+' g'})};window.render()})})()</script>)HTML";
 const char SETTINGS_HX711[] PROGMEM = R"HTML(<script>(()=>{let section=document.createElement('section');section.className='card';section.innerHTML='<h2>HX711 kalibrieren</h2><p>Bekanntes Gewicht auflegen und den berechneten Kalibrierwert eintragen.</p><label>Kalibrierwert</label><input id="hxCalibration" type="number" step="0.01"><button id="hxSave">Kalibrierwert speichern</button>';document.querySelector('#ota').closest('.card').before(section);let input=document.querySelector('#hxCalibration'),msg=document.querySelector('#msg');fetch('/api/settings/hx711').then(r=>r.json()).then(x=>input.value=x.factor);document.querySelector('#hxSave').onclick=async()=>{let r=await fetch('/api/settings/hx711',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({factor:Number(input.value)})});msg.textContent=r.ok?'HX711-Kalibrierwert gespeichert und aktiv.':'Ungültiger Kalibrierwert.'}})()</script>)HTML";
 const char COLOR_STYLE[] PROGMEM = R"HTML(<style>#color{appearance:none;-webkit-appearance:none;width:54px;height:54px;padding:0;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #2563eb;cursor:pointer}#color::-webkit-color-swatch-wrapper{padding:0}#color::-webkit-color-swatch{border:0;border-radius:50%}</style>)HTML";
 const char WEB_ACTIONS[] PROGMEM = R"HTML(<script>(()=>{const f=document.querySelector('#f');if(!f)return;const editor=f.closest('.card'),title=document.querySelector('#title');f.hidden=true;title.textContent='NFC-Rolle bearbeiten';let read=document.createElement('button');read.type='button';read.textContent='NFC lesen und bearbeiten';read.onclick=async()=>{let r=await(await fetch('/api/nfc/read',{method:'POST'})).json();if(r.id)window.edit(encodeURIComponent(r.id));else alert('Kein NFC-Tag erkannt')};editor.insertBefore(read,f);let box=document.createElement('div');box.hidden=true;box.innerHTML='<button type="button" id="webWeigh">Wiegen</button><button type="button" id="webDelete" style="background:#b91c1c">Löschen</button>';f.append(box);window.deleteRoll=async id=>{if(!confirm('Diese Rolle wirklich löschen?'))return;await fetch('/api/roll?id='+encodeURIComponent(id),{method:'DELETE'});formReset();f.hidden=true;box.hidden=true;title.textContent='NFC-Rolle bearbeiten';load()};const oldRender=window.render;window.render=()=>{oldRender();document.querySelectorAll('#rows tr').forEach((row,i)=>{if(!data[i])return;let b=document.createElement('button');b.textContent='Löschen';b.style.background='#b91c1c';b.onclick=()=>window.deleteRoll(data[i].id);row.querySelector('.actions').append(b)})};const old=window.edit;window.edit=id=>{old(id);f.hidden=false;box.hidden=false;let r=data.find(x=>x.id===decodeURIComponent(id));document.querySelector('#webWeigh').onclick=async()=>{await fetch('/api/weigh?id='+encodeURIComponent(r.id),{method:'POST'});load()};document.querySelector('#webDelete').onclick=()=>window.deleteRoll(r.id)};document.querySelector('#cancel').onclick=()=>{formReset();f.hidden=true;box.hidden=true;title.textContent='NFC-Rolle bearbeiten'};load()})()</script>)HTML";
@@ -861,6 +876,7 @@ void web()  {
     r->print(WEB_SPOOL_WEIGHT);
     r->print(WEB_SPOOL_TYPES);
     r->print(WEB_SPOOL_NAV);
+    r->print(WEB_WEIGHT_FORMAT);
     q->send(r);
   });
   server.on("/spools",HTTP_GET,[](AsyncWebServerRequest*q) { q->send(200,"text/html; charset=utf-8",SPOOLS_PAGE); });
@@ -875,6 +891,7 @@ void web()  {
     r->print(SETTINGS_NET);
     r->print(SETTINGS_NTP_VALUE);
     r->print(SETTINGS_TOUCH);
+    r->print(SETTINGS_WEIGHT_FORMAT);
     r->print(SETTINGS_HX711);
     r->printf("<p>Firmware-Version: %s</p>",FIRMWARE_VERSION);
     q->send(r);
@@ -1028,6 +1045,19 @@ void web()  {
     debugPrintf("[HX711] Kalibrierwert via WebUI gesetzt: %.2f\n",hxCalibration);
     q->send(200,"application/json","{\"ok\":true}");
   });
+  server.on("/api/settings/weight-format",HTTP_GET,[](AsyncWebServerRequest*q) {
+    q->send(200,"application/json",String("{\"decimals\":")+String(weightDecimals)+"}");
+  });
+  server.on("/api/settings/weight-format",HTTP_POST,[](AsyncWebServerRequest*q,JsonVariant &body) {
+    int decimals=body.as<JsonObject>()["decimals"]|1;
+    if(decimals!=0 && decimals!=1) {
+      q->send(400,"application/json","{\"ok\":false}");
+      return;
+    }
+    weightDecimals=decimals;
+    preferences.putUChar("wdec",weightDecimals);
+    q->send(200,"application/json","{\"ok\":true}");
+  });
   server.on("/api/ota",HTTP_POST,[](AsyncWebServerRequest*q) {
     bool ok=!Update.hasError();
     q->send(ok?200:500,"application/json",ok?"{\"ok\":true}":"{\"ok\":false}");
@@ -1063,6 +1093,8 @@ void setup()  {
   rgbOff();
   preferences.begin("filament",false);
   hxCalibration=preferences.getFloat("hxcal",HX711_CALIBRATION);
+  weightDecimals=preferences.getUChar("wdec",1);
+  if(weightDecimals>1)weightDecimals=1;
   analogReadResolution(12);
   analogSetPinAttenuation(PIN_BATTERY_ADC,ADC_11db);
   screen.init();
@@ -1142,8 +1174,11 @@ void loop()  {
   handleTouch();
   hxReady=ENABLE_HX711&&scale.is_ready();
   if(hxReady) {
-    float sample=constrain(scale.get_units(1),0.0F,SCALE_MAX_WEIGHT_G);
+    // Gesamtgewicht darf nach einer Tara negativ sein; nur die obere
+    // Nennlast der Wägezelle wird begrenzt.
+    float sample=min(scale.get_units(1),SCALE_MAX_WEIGHT_G);
     addWeightSample(sample);
+    hxHasSample=true;
   }
   if(millis()-lastLcdWeightUpdate>=250) {
     lastLcdWeightUpdate=millis();

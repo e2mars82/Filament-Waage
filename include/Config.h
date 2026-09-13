@@ -9,7 +9,7 @@ constexpr bool PN532_I2C_ONLY = true;
 constexpr bool ENABLE_PN532 = true;
 constexpr bool ENABLE_DEBUG = true;
 // Bei jeder veröffentlichten Firmwareänderung um 0.1 erhöhen.
-constexpr char FIRMWARE_VERSION[] = "4.8";
+constexpr char FIRMWARE_VERSION[] = "5.4";
 // Maximale Nennlast der verwendeten Wägezelle. Werte darüber werden nicht
 // angezeigt, damit fehlerhafte Messwerte keine falschen Rollenwerte erzeugen.
 constexpr float SCALE_MAX_WEIGHT_G = 5000.0F;
