@@ -7,14 +7,30 @@ constexpr bool ENABLE_SD_CARD = true;
 // Der PN532 wird ausschließlich über I²C betrieben. Es gibt keine NFC-SPI-Pins.
 constexpr bool PN532_I2C_ONLY = true;
 constexpr bool ENABLE_PN532 = true;
+// Echter Reset-EINGANG RSTPD_N des PN532, niemals RSTOUT_N/RSTO-Ausgang!
+// GPIO35 ist nur Eingang. GPIO26 ist ausgabefähig, belegt aber die bisher
+// ungenutzte Audio-DAC-Leitung des Boards; Audio ist damit nicht verfügbar.
+constexpr bool ENABLE_PN532_RESET = true;
+constexpr int PN532_RESET_PIN = 26;
+static_assert(!ENABLE_PN532_RESET || (PN532_RESET_PIN>=0 && PN532_RESET_PIN<34),
+              "PN532 Reset braucht einen Ausgang; GPIO34 bis GPIO39 sind nur Eingaenge");
+constexpr uint16_t PN532_SCAN_TIMEOUT_MS = 200;
+constexpr uint16_t PN532_FIELD_SETTLE_MS = 10;
 constexpr bool ENABLE_DEBUG = true;
 // Bei jeder veröffentlichten Firmwareänderung um 0.1 erhöhen.
-constexpr char FIRMWARE_VERSION[] = "5.4";
+constexpr char FIRMWARE_VERSION[] = "5.8";
 // Maximale Nennlast der verwendeten Wägezelle. Werte darüber werden nicht
 // angezeigt, damit fehlerhafte Messwerte keine falschen Rollenwerte erzeugen.
 constexpr float SCALE_MAX_WEIGHT_G = 5000.0F;
-// Anzahl der Einzelmessungen für den gleitenden Durchschnitt.
+// NFC einmal pro Sekunde. Nach Abschluss: 500 ms beruhigen, dann drei
+// Gewichtswerte mit mindestens 50 ms Abstand als gemeinsamen Mittelwert.
+// Bei HX711 RATE=10 SPS sind frische Werte erst etwa alle 100 ms verfügbar.
+constexpr uint32_t NFC_READ_INTERVAL_MS = 1000;
+constexpr uint32_t HX711_AFTER_NFC_DELAY_MS = 500;
+constexpr uint32_t HX711_SAMPLE_INTERVAL_MS = 50;
+constexpr uint32_t HX711_READY_TIMEOUT_MS = 250;
 constexpr uint8_t HX711_AVERAGE_SAMPLES = 3;
+static_assert(HX711_AVERAGE_SAMPLES > 0, "Mindestens eine Gewichtsmessung erforderlich");
 // Querformat für das gedrehte LCD: 90 Grad ergibt 480×320 Pixel.
 constexpr int DISPLAY_ROTATION_DEGREES = 0;
 static_assert(DISPLAY_ROTATION_DEGREES == 0 || DISPLAY_ROTATION_DEGREES == 90 || DISPLAY_ROTATION_DEGREES == 180 || DISPLAY_ROTATION_DEGREES == 270, "DISPLAY_ROTATION_DEGREES muss 0, 90, 180 oder 270 sein");

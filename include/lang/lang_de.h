@@ -34,6 +34,21 @@ constexpr char SPOOL_WEIGHT[] = "Spulengewicht";
 constexpr char SPOOL_TYPES[] = "Spulenarten";
 
 constexpr char SETTINGS[] = "Einstellungen";
+constexpr char LED_UI_JSON[] = R"JSON({
+  "label": "RGB-LED aktivieren",
+  "description": "Farben für Ruhe, NFC-Lesen und Schreiben frei wählen. Alle LED-Einstellungen werden dauerhaft gespeichert. Die LCD-Beleuchtung bleibt unverändert.",
+  "idle": "Ruhezustand",
+  "read": "NFC lesen",
+  "write": "NFC schreiben",
+  "saveColors": "LED-Farben speichern",
+  "loading": "LED-Einstellung wird geladen …",
+  "saving": "LED-Einstellung wird gespeichert …",
+  "on": "RGB-LED aktiviert. Einstellung bleibt nach einem Neustart erhalten.",
+  "off": "RGB-LED deaktiviert. Alle drei Farben bleiben ausgeschaltet.",
+  "loadError": "LED-Einstellung konnte nicht geladen werden. Bitte erneut versuchen.",
+  "saveError": "Speichern nicht bestätigt. Bitte den aktuellen Zustand erneut laden.",
+  "retry": "Zustand erneut laden"
+})JSON";
 constexpr char NETWORK[] = "Netzwerk";
 constexpr char WIFI[] = "WLAN";
 constexpr char TIME[] = "Uhrzeit";
